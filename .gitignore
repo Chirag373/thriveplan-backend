@@ -147,3 +147,19 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Python / Django
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+*.sqlite3
+staticfiles/
+media/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+secrets/
+*service-account*.json
+*firebase-adminsdk*.json

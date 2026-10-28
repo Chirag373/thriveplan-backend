@@ -1,6 +1,7 @@
 # Database design proposal
 
 Status: Firebase-backed signup is implemented with User and UserPreferences.
+Planner Task/Subtask and journal JournalEntry are also implemented.
 Other app models remain proposals and their source files are placeholders.
 
 Architecture: Expo -> Firebase Authentication -> Django REST API -> PostgreSQL

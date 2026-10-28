@@ -14,6 +14,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "apps.accounts",
     "apps.planner",
+    "apps.journal",
+    "apps.wellness",
+    "apps.notifications",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

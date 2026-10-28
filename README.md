@@ -335,3 +335,199 @@ unknown fields (including task, owner, id, position) return 400. Mutations are
 transactional and lock the parent row. Completing subtasks does not automatically
 complete their parent or grant rewards. Task lists already include subtasks;
 there is no separate subtask list endpoint or frontend integration yet.
+
+## Journal entries
+
+All endpoints require a Firebase Bearer token and scope entries to that user.
+
+- GET `/api/v1/journal/entries/`: paginated `{count, next, previous, results}`,
+  newest date/ID first. Optional `mood`, `page`, and `page_size` (20 default,
+  100 maximum); invalid/unknown/repeated filters return 400.
+- POST `/api/v1/journal/entries/`: creates an entry and returns 201.
+- PATCH `/api/v1/journal/entries/{id}/`: edits supplied fields only; returns 200.
+- DELETE `/api/v1/journal/entries/{id}/`: permanently removes the entry; returns
+  204 without a body. Unknown or foreign IDs return 404 for updates/deletion.
+
+Example create body:
+
+```json
+{"thoughts": "Today I made time for myself.", "mood": "Good", "date": "2026-10-27T10:00:00+05:30"}
+```
+
+Responses contain `{id, mood, thoughts, date}`, matching the frontend store.
+Thoughts are required on creation, trimmed, nonblank, and limited to 10,000
+characters. Mood may be Great, Good, Okay, Low, Stressed, or null (default).
+Date is an ISO timestamp with a timezone offset or Z; omitted creation dates
+use the server's current time. Responses normalize timestamps to UTC. Multiple
+entries per day are allowed. PATCH can explicitly clear mood with null.
+Empty patches, unknown fields, invalid moods/dates, and blank thoughts return 400.
+
+Updates/deletes are transactional; responses disable caching. Frontend wiring,
+journal templates, persistent drafts, voice transcription, and reward points
+are not implemented. Run the journal migration on deployment. POST is not
+idempotent: retrying a successful create can produce another entry.
+
+## Journal template catalog
+
+GET `/api/v1/journal/templates/` requires a Firebase Bearer token. Returns an
+unpaginated array of active shared templates in display order. Each item contains
+`id` (stable slug), `title`, `description`, `prompt`, `icon`, and `colors`.
+The migration seeds the frontend's eight templates: my-day, gratitude, wins,
+mood, goals, reflection, self-care, weekend. Text, line breaks, icons, and colors
+match the existing frontend catalog. An empty active catalog returns `[]`.
+
+Templates are database content, not private journal entries. Inactive templates
+are excluded. This endpoint is read-only and does not create entries or reward
+points. Template editing is not exposed through the API. Frontend wiring
+remains pending. Apply migrations on deployment to install the catalog. Rollback
+of the seed migration preserves content; rollback of the model migration drops
+the table. Reapplying seeds does not overwrite existing template edits.
+
+
+GET `/api/v1/journal/templates/{id}/` returns one active template with the same
+fields as a catalog item. IDs are slugs, for example
+`/api/v1/journal/templates/gratitude/`. Requires a Firebase Bearer token.
+Missing and inactive templates both return 404. POST/PUT/PATCH/DELETE are not
+allowed. This read does not create a journal entry. Frontend wiring is pending.
+
+## Daily wellness
+
+GET `/api/v1/wellness/daily/` requires a Firebase Bearer token. Optional query
+parameters are `date=2026-10-28` and `timezone=Asia/Kolkata`. Without date, the
+current day in the supplied IANA timezone is used (UTC by default). An explicit
+date selects that calendar day directly. Invalid, unknown, or repeated query
+parameters return 400.
+
+```json
+{"date": "2026-10-28", "timezone": "UTC", "quote": null, "song": null, "books": [], "workout": null, "joke": null}
+```
+
+Populated slots contain id, kind, title, description, body, creator,
+duration_seconds, media_url, and image_url. `body` contains quote/joke text;
+`creator` represents the author/artist; durations are seconds. Books are ordered
+by their selection position. This maps to the frontend's four wellness screens
+and joke section; artwork and book-cover styling remain frontend concerns.
+Favorites and playback/workout progress are not included yet.
+
+WellnessContent stores reusable content; DailyContent schedules a content item
+for a date and slot. There is one quote/song/workout/joke per day and multiple
+ordered books. Only active content matching its slot kind is returned. Missing
+content returns null or an empty books list, with HTTP 200. Content is shared
+between authenticated users; GET does not create records or choose random items.
+
+No demo content is published automatically. Populate selections through trusted
+backend code, calling full_clean before saving, for example in manage.py shell:
+
+```python
+from apps.wellness.models import WellnessContent, DailyContent
+
+content = WellnessContent(kind="quote", title="Daily reflection", body="Your approved text", creator="Your source")
+content.full_clean()
+content.save()
+selection = DailyContent(date="2026-10-28", kind="quote", content=content)
+selection.full_clean()
+selection.save()
+```
+
+There is no public publishing endpoint. The local migration has created the
+schema; apply it on deployment as well. Frontend integration, favorites, content
+publishing UI, and live media integrations are separate work.
+
+## Wellness favorites
+
+All endpoints require a Firebase Bearer token.
+
+- GET `/api/v1/wellness/favorites/`: returns the user's saved active content in
+  `{count, next, previous, results}`. Newest favorites first. Optional `kind`
+  (quote/song/book/workout/joke), `page`, and `page_size` (default 20, max 100).
+- POST `/api/v1/wellness/favorites/` with `{"content_id": 1}`: returns 201 for a
+  new favorite or 200 with the same record on a duplicate save. Database
+  uniqueness prevents duplicate user/content pairs. Missing or inactive content
+  returns 404. The content ID comes from the daily endpoint's content objects.
+- DELETE `/api/v1/wellness/favorites/{id}/`: use the favorite record's ID, not
+  content ID. Returns 204 without a body. Missing/foreign favorites return 404;
+  repeated deletion returns 404. Deletion preserves the content and other users'
+  favorites. A user's favorite can still be removed if its content is inactive.
+
+Favorite records contain `id`, nested `content` (same fields as daily content),
+and `created_at`. Inactive content is hidden from lists without deleting saved
+records. Invalid/unknown fields and invalid/repeated list filters return 400.
+No client-supplied owner is accepted. Favorites are distinct from likes and
+workout progress. The frontend still needs API integration. Apply the favorite
+migration on deployment; local SQLite tests do not validate PostgreSQL lock
+behavior under concurrent load.
+
+## Insights summary
+
+GET `/api/v1/insights/summary/` requires a Firebase Bearer token. Defaults to all
+currently stored records owned by that user. Optional `start_date` and `end_date`
+must be supplied together as YYYY-MM-DD; both days are included. Optional
+`timezone` is an IANA name (UTC default), for example:
+`?start_date=2026-10-01&end_date=2026-10-31&timezone=Asia/Kolkata`.
+
+Returns start_date/end_date (null for all-time), timezone, and:
+
+- tasks: total, completed, pending (all unfinished), not_started (Pending status),
+  in_progress, overdue, and completion_percentage (0–100, rounded to 2 decimals).
+- journal: total_entries, moods (counts for Great/Good/Okay/Low/Stressed), and
+  unrecorded_mood (null mood count).
+
+Empty data returns zero counts/percentage. Tasks are filtered by scheduled date,
+not creation or completion timestamp. Status reflects the current saved state;
+this is not historical completion-event reporting. Journal timestamps are
+filtered from local midnight through the exclusive next-day midnight, including
+DST boundaries. Mood counts describe journal entries, not distinct days or
+medical assessments. No points, streaks, focused-time metrics, or sample values
+are fabricated. Deleted records are excluded. The frontend still needs wiring.
+
+Invalid ranges/timezones, unknown or repeated filters return 400. Response caching
+is disabled. This endpoint only queries existing task/journal tables and needs
+no new model or migration. Multi-query aggregates are not a transactional snapshot
+under concurrent writes; PostgreSQL load/concurrency validation remains pending.
+
+## Productivity charts
+
+GET `/api/v1/insights/productivity/` requires a Firebase Bearer token. Accepts
+`start_date`, `end_date` (inclusive YYYY-MM-DD, supplied together), and `timezone`
+(IANA name, UTC default). Without dates, returns today and the previous six days
+in that timezone. Explicit ranges are limited to 366 days. Timezone chooses the
+default current day; task scheduled dates are already calendar dates and are
+not converted.
+
+Returns start_date, end_date, timezone, summary, and days. Each day contains date,
+total, completed, pending (all unfinished statuses), and completion_percentage.
+Days are ascending and include zero-filled dates. Summary contains the same
+counts and percentage for the whole range. The overall percentage is completed
+/ total * 100, not the average of daily percentages. Empty totals yield 0.0.
+
+Statistics use current saved task statuses grouped by scheduled date. They do
+not record when tasks were completed, focused time, or historical status changes.
+Only the authenticated user's tasks are counted. Invalid/unknown/repeated filters
+return 400. GET is read-only, disables caching, and performs one grouped task
+query. No migration is needed. Frontend chart integration remains pending.
+
+## Notification inbox
+
+All require a Firebase Bearer token and operate on the authenticated user's inbox.
+
+- GET `/api/v1/notifications/`: paginated `{count, next, previous, results}`,
+  newest first. Optional category (Tasks/Mindfulness/System), unread=true|false,
+  page, page_size (20 default, max 100). Unknown/repeated/invalid filters return 400.
+- PATCH `/api/v1/notifications/{id}/` with `{"unread": false}`: returns 200 with
+  the updated notification. Repeated calls preserve the first read timestamp.
+  Only marking read is supported; unread=true and other fields return 400.
+- POST `/api/v1/notifications/read-all/` with `{}` or an empty body: returns
+  `{"updated": 3}`. Updates only this user's unread records created at or before
+  the operation's cutoff. Retrying with nothing left returns updated=0.
+
+Notifications contain id, title, message, category, icon, destination, target_id,
+created_at, read_at, and unread. Frontend Today/Yesterday/time labels should be
+derived from created_at in the user's timezone. target_id is optional and supplied
+by trusted notification producers; destination resource APIs must still enforce
+ownership. Missing/foreign notifications return 404. Reads disable caching and
+do not mark records read automatically. There is no public create/delete API.
+
+The schema is migrated locally but no sample notifications are generated. Future
+trusted jobs should validate records with full_clean(), verify target ownership,
+and create them for the intended recipient. This change does not implement push
+delivery, scheduled reminder jobs, notification settings, or frontend wiring.

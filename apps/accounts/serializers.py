@@ -95,3 +95,15 @@ class PreferencesSerializer(serializers.ModelSerializer):
         model = UserPreferences
         fields = ("profession", "focus_areas", "onboarding_completed")
         read_only_fields = fields
+
+
+class NotificationPreferencesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserPreferences
+        fields = ("daily_reminders", "weekly_summary")
+        read_only_fields = fields
+
+
+class NotificationPreferencesUpdateSerializer(StrictUpdateSerializer):
+    daily_reminders = serializers.BooleanField(required=False)
+    weekly_summary = serializers.BooleanField(required=False)

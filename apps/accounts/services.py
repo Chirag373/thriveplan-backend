@@ -73,3 +73,20 @@ def update_preferences(*, user, changes):
     )
     preferences.save(update_fields=[*changes, "onboarding_completed"])
     return preferences
+
+
+def get_notification_preferences(*, user):
+    # Return defaults for legacy accounts without creating records during GET.
+    return getattr(user, "preferences", None) or UserPreferences(user=user)
+
+
+@transaction.atomic
+def update_notification_preferences(*, user, changes):
+    user = User.objects.select_for_update().get(pk=user.pk)
+    if not user.is_active:
+        raise PermissionDenied("This account has been deactivated.")
+    preferences, _ = UserPreferences.objects.get_or_create(user=user)
+    for field, value in changes.items():
+        setattr(preferences, field, value)
+    preferences.save(update_fields=list(changes))
+    return preferences

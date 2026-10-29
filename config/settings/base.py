@@ -35,7 +35,12 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    "DEFAULT_THROTTLE_RATES": {"signup": "10/min", "login": "10/min", "forgot_password": "5/min"},
+    "DEFAULT_THROTTLE_RATES": {
+        "signup": "10/min",
+        "login": "10/min",
+        "forgot_password": "5/min",
+        "device_registration": "10/min",
+    },
     "NUM_PROXIES": 0,
 }
 DATA_UPLOAD_MAX_MEMORY_SIZE = 65536

@@ -1,8 +1,11 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework.exceptions import APIException, PermissionDenied
 
-from .models import Notification
+from apps.accounts.models import User
+
+from .models import Device, Notification
 
 
 def list_notifications(*, user, filters):
@@ -30,3 +33,43 @@ def mark_all_read(*, user):
     return Notification.objects.filter(
         owner=user, read_at__isnull=True, created_at__lte=cutoff
     ).update(read_at=cutoff)
+
+
+class DeviceRegistrationConflict(APIException):
+    status_code = 409
+    default_detail = "Device registration conflicts with an existing registration. Unregister it before switching accounts."
+    default_code = "device_registration_conflict"
+
+
+def register_device(*, user, installation_id, push_token, platform):
+    try:
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=user.pk)
+            if not user.is_active:
+                raise PermissionDenied("This account has been deactivated.")
+            device = (
+                Device.objects.select_for_update().filter(installation_id=installation_id).first()
+            )
+            if device is not None and device.owner_id != user.pk:
+                raise DeviceRegistrationConflict()
+            if device is None:
+                device = Device.objects.create(
+                    owner=user,
+                    installation_id=installation_id,
+                    push_token=push_token,
+                    platform=platform,
+                )
+                return device, True
+            device.push_token = push_token
+            device.platform = platform
+            device.save(update_fields=["push_token", "platform", "updated_at"])
+            return device, False
+    except IntegrityError:
+        # Unique constraints cover concurrent registration and token collisions.
+        raise DeviceRegistrationConflict() from None
+
+
+@transaction.atomic
+def unregister_device(*, user, device_id):
+    device = get_object_or_404(Device.objects.select_for_update(), pk=device_id, owner=user)
+    device.delete()

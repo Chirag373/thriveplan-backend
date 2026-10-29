@@ -531,3 +531,92 @@ The schema is migrated locally but no sample notifications are generated. Future
 trusted jobs should validate records with full_clean(), verify target ownership,
 and create them for the intended recipient. This change does not implement push
 delivery, scheduled reminder jobs, notification settings, or frontend wiring.
+
+## Notification preferences
+
+GET and PATCH `/api/v1/accounts/me/notification-preferences/` require a Firebase
+Bearer token. Responses contain `{"daily_reminders": true, "weekly_summary": false}`
+with the user's saved values. Defaults match the frontend toggles. GET returns
+defaults without writing if the user has no preferences row.
+
+PATCH accepts either or both fields, for example `{"daily_reminders": false}`.
+Omitted fields and onboarding preferences are preserved. Empty bodies, unknown
+fields, and invalid/null booleans return 400. Updates are transactional and lock
+the authenticated user's row. Only that user's settings can be changed; invalid
+tokens return 401 and deactivated users 403. Successful GET/PATCH return 200 and
+use private/no-store caching. The migration adds defaults to existing accounts.
+
+These APIs persist preferences only. They do not schedule reminders, send weekly
+summaries, change OS notification permissions, or delete inbox items. Future
+delivery jobs must consult these settings. Frontend integration remains pending.
+
+## Expo Push device registration
+
+POST `/api/v1/notifications/devices/` requires a Firebase Bearer token:
+
+```json
+{
+  "installation_id": "349de830-a346-45eb-ae63-bdaf38998498",
+  "push_token": "ExpoPushToken[example-token]",
+  "platform": "android"
+}
+```
+
+Use a UUID generated and persisted by the mobile app for each installation (not
+a hardware ID). platform is android or ios. Send an ExpoPushToken or legacy
+ExponentPushToken from the app's Expo project, not a Firebase Auth token, FCM
+registration token, or APNs device token. The example token above is illustrative.
+
+Returns 201 when created or 200 when refreshing the same user's installation.
+The response contains id, installation_id, platform, created_at, updated_at;
+push tokens and owner IDs are not exposed. Resubmit after token changes.
+Installation IDs and tokens are globally unique. A conflicting token or an
+installation owned by another account returns 409 without transferring ownership.
+Concurrent duplicates are protected by unique constraints; retry on a 409 caused
+by a registration race. Registration is limited to 10/minute per authenticated
+user using the current DRF cache configuration.
+
+DELETE `/api/v1/notifications/devices/{id}/` removes only the authenticated user's
+registration and returns 204 without a body. Missing/foreign IDs return 404;
+repeated deletion also returns 404. Persist the returned record ID and unregister
+BEFORE Firebase logout or account switching. The backend does not automatically
+transfer registrations on shared devices. Failed offline logout/unregistration
+requires retry or future recovery support before reliable account switching.
+
+This stores tokens only. Token format validation does not prove device ownership,
+project membership, OS permission, or deliverability. No push messages are sent.
+Frontend token acquisition/refresh listeners, Expo project credentials, delivery
+jobs, receipt processing, invalid-token cleanup, and stale-registration cleanup
+remain pending. Before enabling delivery, use generic notification text and fetch
+private content only after Firebase authentication; never put journal text or
+other private records in push payloads. Delivery jobs must honor notification
+preferences and active account status. Apply the device migration on deployment.
+
+## Task reminder schedules
+
+All require a Firebase Bearer token and parent-task ownership.
+
+- POST `/api/v1/planner/tasks/{task_id}/reminders/` with
+  `{"scheduled_at": "2026-11-01T09:00:00+05:30"}` creates a schedule (201).
+  The time must be in the future and include an explicit timezone offset or Z.
+  Repeating the same task/time while still future returns the existing record
+  (200). Completed tasks reject scheduling. Maximum 20 stored schedules per task.
+- GET `/api/v1/planner/tasks/{task_id}/reminders/` returns an array ordered by
+  scheduled_at then ID. Records contain id, task_id, scheduled_at (UTC), created_at.
+  Empty tasks return `[]`. The list includes elapsed schedules, since delivery
+  and expiry cleanup are not implemented yet.
+- DELETE `/api/v1/planner/tasks/{task_id}/reminders/{id}/` cancels by deleting the
+  schedule (204). Missing, foreign, or mismatched parent/reminder IDs return 404.
+
+Creating a schedule enables the task's reminder flag. Cancelling the final
+schedule clears it. Completing a task or PATCHing reminder=false cancels all its
+schedules; deleting a task cascades schedules. Reopening a task does not restore
+cancelled schedules. Setting reminder=true alone still does not choose a time.
+Editing task date/time does not shift explicit reminder times; cancel and recreate
+them if needed. Mutations lock the parent row and are transactional.
+
+These endpoints store schedules only: no notification is sent when a time passes.
+A future worker must implement delivery/expiry state, safe claiming, retries,
+notification preferences, active-user checks, and device delivery. It must share
+the parent locking/cancellation rules to coordinate with task updates. Frontend
+integration remains pending. Apply the reminder migration on deployment.

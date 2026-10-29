@@ -53,3 +53,17 @@ class Subtask(models.Model):
 
     class Meta:
         ordering = ("position", "id")
+
+
+class Reminder(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="reminders")
+    scheduled_at = models.DateTimeField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("scheduled_at", "id")
+        constraints: ClassVar = [
+            models.UniqueConstraint(
+                fields=["task", "scheduled_at"], name="unique_task_reminder_time"
+            )
+        ]

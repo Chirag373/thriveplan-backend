@@ -11,6 +11,8 @@ from apps.common.mail import MailDeliveryError, send_password_reset_email
 from .authentication import FirebaseAuthentication, FirebaseProvider
 from .serializers import (
     ForgotPasswordSerializer,
+    NotificationPreferencesSerializer,
+    NotificationPreferencesUpdateSerializer,
     PreferencesSerializer,
     PreferencesUpdateSerializer,
     ProfileUpdateSerializer,
@@ -18,7 +20,14 @@ from .serializers import (
     SignUpSerializer,
     UserSerializer,
 )
-from .services import login_user, signup_user, update_preferences, update_profile
+from .services import (
+    get_notification_preferences,
+    login_user,
+    signup_user,
+    update_notification_preferences,
+    update_preferences,
+    update_profile,
+)
 
 
 class SignUpAuthEndpoint(APIView):
@@ -144,3 +153,27 @@ class EmailUnavailable(APIException):
     status_code = 503
     default_detail = "Email service is temporarily unavailable."
     default_code = "email_unavailable"
+
+
+class NotificationPreferencesEndpoint(APIView):
+    authentication_classes = (FirebaseAuthentication,)
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+    http_method_names = ("get", "patch", "head", "options")
+
+    def get(self, request):
+        preferences = get_notification_preferences(user=request.user)
+        return Response(NotificationPreferencesSerializer(preferences).data)
+
+    def patch(self, request):
+        serializer = NotificationPreferencesUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        preferences = update_notification_preferences(
+            user=request.user, changes=serializer.validated_data
+        )
+        return Response(NotificationPreferencesSerializer(preferences).data)
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "private, no-store"
+        return response

@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from .models import Subtask, Task
+from apps.common.fields import AwareDateTimeField
+
+from .models import Reminder, Subtask, Task
 
 
 class TaskListQuerySerializer(serializers.Serializer):
@@ -109,3 +111,23 @@ class SubtaskWriteSerializer(serializers.Serializer):
         if not validated:
             raise serializers.ValidationError({"non_field_errors": ["Provide title or completed."]})
         return validated
+
+
+class ReminderCreateSerializer(serializers.Serializer):
+    scheduled_at = AwareDateTimeField()
+
+    def to_internal_value(self, data):
+        validated = super().to_internal_value(data)
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError(
+                {key: "This field cannot be written." for key in sorted(unknown)}
+            )
+        return validated
+
+
+class ReminderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reminder
+        fields = ("id", "task_id", "scheduled_at", "created_at")
+        read_only_fields = fields

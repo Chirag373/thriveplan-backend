@@ -1,8 +1,10 @@
 from django.db import transaction
 from django.db.models import Max
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 
-from .models import Subtask, Task
+from .models import Reminder, Subtask, Task
 
 
 def list_tasks(*, user, filters):
@@ -29,6 +31,10 @@ def update_task(*, user, task_id, data):
     task = get_object_or_404(Task.objects.select_for_update(), pk=task_id, owner=user)
     for field, value in data.items():
         setattr(task, field, value)
+    if task.completed or data.get("reminder") is False:
+        task.reminders.all().delete()
+        task.reminder = False
+        data = {**data, "reminder": False}
     task.save(update_fields=[*data, "updated_at"])
     return task
 
@@ -63,3 +69,37 @@ def delete_subtask(*, user, task_id, subtask_id):
     task = get_object_or_404(Task.objects.select_for_update(), pk=task_id, owner=user)
     subtask = get_object_or_404(Subtask, pk=subtask_id, task=task)
     subtask.delete()
+
+
+def list_reminders(*, user, task_id):
+    task = get_object_or_404(Task, pk=task_id, owner=user)
+    return task.reminders.all()
+
+
+@transaction.atomic
+def schedule_reminder(*, user, task_id, scheduled_at):
+    task = get_object_or_404(Task.objects.select_for_update(), pk=task_id, owner=user)
+    if task.completed:
+        raise ValidationError({"task": "Completed tasks cannot have reminders."})
+    if scheduled_at <= timezone.now():
+        raise ValidationError({"scheduled_at": "Choose a future reminder time."})
+    existing = task.reminders.filter(scheduled_at=scheduled_at).first()
+    if existing is not None:
+        return existing, False
+    if task.reminders.count() >= 20:
+        raise ValidationError(
+            {"task": "A task can have at most 20 reminders. Cancel one before adding another."}
+        )
+    reminder = Reminder.objects.create(task=task, scheduled_at=scheduled_at)
+    task.reminder = True
+    task.save(update_fields=["reminder", "updated_at"])
+    return reminder, True
+
+
+@transaction.atomic
+def cancel_reminder(*, user, task_id, reminder_id):
+    task = get_object_or_404(Task.objects.select_for_update(), pk=task_id, owner=user)
+    reminder = get_object_or_404(Reminder, pk=reminder_id, task=task)
+    reminder.delete()
+    task.reminder = task.reminders.exists()
+    task.save(update_fields=["reminder", "updated_at"])

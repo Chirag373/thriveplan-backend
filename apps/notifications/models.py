@@ -38,3 +38,21 @@ class Notification(models.Model):
     @property
     def unread(self):
         return self.read_at is None
+
+
+class Device(models.Model):
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="push_devices"
+    )
+    installation_id = models.UUIDField(unique=True)
+    push_token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=7, choices=[("android", "Android"), ("ios", "iOS")])
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints: ClassVar = [
+            models.CheckConstraint(
+                condition=models.Q(platform__in=["android", "ios"]), name="device_valid_platform"
+            )
+        ]

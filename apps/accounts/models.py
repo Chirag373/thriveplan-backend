@@ -39,3 +39,5 @@ class UserPreferences(models.Model):
     )
     focus_areas = models.JSONField(default=list)
     onboarding_completed = models.BooleanField(default=False)
+    daily_reminders = models.BooleanField(default=True)
+    weekly_summary = models.BooleanField(default=False)

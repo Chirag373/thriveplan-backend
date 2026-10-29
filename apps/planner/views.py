@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from apps.accounts.authentication import FirebaseAuthentication
 
 from .serializers import (
+    ReminderCreateSerializer,
+    ReminderSerializer,
     SubtaskSerializer,
     SubtaskWriteSerializer,
     TaskListQuerySerializer,
@@ -16,11 +18,14 @@ from .serializers import (
     TaskWriteSerializer,
 )
 from .services import (
+    cancel_reminder,
     create_subtask,
     create_task,
     delete_subtask,
     delete_task,
+    list_reminders,
     list_tasks,
+    schedule_reminder,
     update_subtask,
     update_task,
 )
@@ -122,3 +127,41 @@ class SubtaskDetailEndpoint(APIView):
         response = super().finalize_response(request, response, *args, **kwargs)
         response["Cache-Control"] = "private, no-store"
         return response
+
+
+class PrivateReminderMixin:
+    authentication_classes = (FirebaseAuthentication,)
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (JSONParser,)
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class ReminderListEndpoint(PrivateReminderMixin, APIView):
+    http_method_names = ("get", "post", "head", "options")
+
+    def get(self, request, task_id):
+        reminders = list_reminders(user=request.user, task_id=task_id)
+        return Response(ReminderSerializer(reminders, many=True).data)
+
+    def post(self, request, task_id):
+        serializer = ReminderCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reminder, created = schedule_reminder(
+            user=request.user, task_id=task_id, **serializer.validated_data
+        )
+        return Response(
+            ReminderSerializer(reminder).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ReminderCancelEndpoint(PrivateReminderMixin, APIView):
+    http_method_names = ("delete", "options")
+
+    def delete(self, request, task_id, reminder_id):
+        cancel_reminder(user=request.user, task_id=task_id, reminder_id=reminder_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Notification
+from .models import Device, Notification
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -63,3 +63,29 @@ class ReadAllSerializer(serializers.Serializer):
         if data:
             raise serializers.ValidationError({"non_field_errors": ["Send an empty JSON object."]})
         return validated
+
+
+class DeviceRegistrationSerializer(serializers.Serializer):
+    installation_id = serializers.UUIDField()
+    push_token = serializers.RegexField(
+        regex=r"\A(?:ExpoPushToken|ExponentPushToken)\[[A-Za-z0-9_-]+\]\Z",
+        max_length=255,
+        trim_whitespace=False,
+    )
+    platform = serializers.ChoiceField(choices=("android", "ios"))
+
+    def to_internal_value(self, data):
+        validated = super().to_internal_value(data)
+        unknown = set(data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError(
+                {key: "This field cannot be written." for key in sorted(unknown)}
+            )
+        return validated
+
+
+class DeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Device
+        fields = ("id", "installation_id", "platform", "created_at", "updated_at")
+        read_only_fields = fields

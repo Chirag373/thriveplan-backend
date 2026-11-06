@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     "apps.journal",
     "apps.wellness",
     "apps.notifications",
+    "apps.rewards",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -40,6 +41,7 @@ REST_FRAMEWORK = {
         "login": "10/min",
         "forgot_password": "5/min",
         "device_registration": "10/min",
+        "journal_transcription": "5/min",
     },
     "NUM_PROXIES": 0,
 }
@@ -57,3 +59,12 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
 EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)
+
+# Local speech recognition is opt-in; models must already be provisioned on the server.
+WHISPER_ENABLED = env.bool("WHISPER_ENABLED", default=False)
+WHISPER_MODEL = env("WHISPER_MODEL", default="base")
+WHISPER_DEVICE = env("WHISPER_DEVICE", default="cpu")
+WHISPER_COMPUTE_TYPE = env("WHISPER_COMPUTE_TYPE", default="int8")
+WHISPER_CPU_THREADS = env.int("WHISPER_CPU_THREADS", default=2)
+WHISPER_MAX_UPLOAD_BYTES = env.int("WHISPER_MAX_UPLOAD_BYTES", default=10 * 1024 * 1024)
+WHISPER_MAX_SECONDS = env.int("WHISPER_MAX_SECONDS", default=300)

@@ -5,9 +5,11 @@ from .views import (
     JournalEntryListEndpoint,
     JournalTemplateDetailEndpoint,
     JournalTemplateListEndpoint,
+    JournalTranscriptionEndpoint,
 )
 
 urlpatterns = [
+    path("transcriptions/", JournalTranscriptionEndpoint.as_view(), name="journal-transcription"),
     path(
         "templates/<slug:template_id>/",
         JournalTemplateDetailEndpoint.as_view(),

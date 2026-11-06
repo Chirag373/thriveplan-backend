@@ -113,6 +113,10 @@ class SubtaskWriteSerializer(serializers.Serializer):
         return validated
 
 
+class TaskCreateSerializer(TaskWriteSerializer):
+    subtasks = SubtaskWriteSerializer(many=True, required=False, max_length=50)
+
+
 class ReminderCreateSerializer(serializers.Serializer):
     scheduled_at = AwareDateTimeField()
 

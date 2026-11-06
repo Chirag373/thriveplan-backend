@@ -1,7 +1,7 @@
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import JSONParser
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,8 +13,17 @@ from .serializers import (
     JournalEntryWriteSerializer,
     JournalQuerySerializer,
     JournalTemplateSerializer,
+    JournalTranscriptionSerializer,
 )
-from .services import create_entry, delete_entry, list_entries, list_templates, update_entry
+from .services import (
+    create_entry,
+    delete_entry,
+    list_entries,
+    list_templates,
+    transcribe_entry_audio,
+    update_entry,
+)
+from .throttles import JournalTranscriptionThrottle
 
 
 class JournalPagination(PageNumberPagination):
@@ -95,6 +104,24 @@ class JournalTemplateDetailEndpoint(RetrieveAPIView):
 
     def get_queryset(self):
         return list_templates()
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+class JournalTranscriptionEndpoint(APIView):
+    authentication_classes = (FirebaseAuthentication,)
+    permission_classes = (IsAuthenticated,)
+    parser_classes = (MultiPartParser,)
+    throttle_classes = (JournalTranscriptionThrottle,)
+    http_method_names = ("post", "options")
+
+    def post(self, request):
+        serializer = JournalTranscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(transcribe_entry_audio(data=serializer.validated_data))
 
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)

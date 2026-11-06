@@ -33,3 +33,9 @@ def delete_entry(*, user, entry_id):
 
 def list_templates():
     return JournalTemplate.objects.filter(is_active=True)
+
+
+def transcribe_entry_audio(*, data):
+    from apps.common.whisper import transcribe
+
+    return transcribe(audio=data["audio"], language=data.get("language"))

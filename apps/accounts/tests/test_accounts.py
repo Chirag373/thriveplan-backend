@@ -72,6 +72,27 @@ class SignupTests(TestCase):
         self.assertEqual(self.post().status_code, 201)
         self.assertEqual(User.objects.get().phone_number, "+919876543210")
 
+    def test_google_identity_uses_the_existing_signup(self):
+        self.identity["firebase"]["sign_in_provider"] = "google.com"
+        self.identity["email"] = "alex@example.com"
+        self.identity["email_verified"] = True
+        response = self.post()
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["user"]["email_verified"])
+        self.assertEqual(self.post().status_code, 200)
+
+    def test_apple_signup_is_rejected_with_or_without_email(self):
+        self.identity["firebase"]["sign_in_provider"] = "apple.com"
+        for email in ("private@privaterelay.appleid.com", None):
+            with self.subTest(email=email):
+                if email:
+                    self.identity["email"] = email
+                else:
+                    self.identity.pop("email", None)
+                self.assertEqual(self.post().status_code, 401)
+                self.assertFalse(User.objects.exists())
+                self.assertFalse(UserPreferences.objects.exists())
+
     def test_missing_and_malformed_authorization(self):
         for header in ["", "Basic test", "Bearer", "Bearer a b"]:
             with self.subTest(header=header):
@@ -187,6 +208,34 @@ class LoginTests(TestCase):
         self.assertFalse(self.user.has_usable_password())
         self.assertTrue(self.verify.call_args.kwargs["check_revoked"])
         self.assertNotIn("password", response.data["user"])
+
+    def test_provider_logins_keep_the_same_uid_and_sync_verified_contacts(self):
+        for provider in ("google.com", "phone"):
+            with self.subTest(provider=provider):
+                self.verify.return_value = {
+                    "uid": self.user.firebase_uid,
+                    "email": "alex@example.com" if provider != "phone" else "",
+                    "email_verified": provider != "phone",
+                    "phone_number": "+919876543210" if provider == "phone" else "",
+                    "firebase": {"sign_in_provider": provider},
+                }
+                response = self.post()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["user"]["id"], self.user.pk)
+                self.assertEqual(response.data["user"]["phone_number"], self.verify.return_value["phone_number"])
+                self.assertEqual(response.data["user"]["email"], self.verify.return_value["email"])
+        self.assertEqual(User.objects.count(), 1)
+
+    def test_apple_login_is_rejected_for_an_existing_uid(self):
+        self.verify.return_value = {
+            "uid": self.user.firebase_uid,
+            "firebase": {"sign_in_provider": "apple.com"},
+        }
+        response = self.post()
+        self.assertEqual(response.status_code, 401)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.last_login)
+        self.assertEqual(self.user.name, "Alex")
 
     def test_completed_onboarding(self):
         UserPreferences.objects.update(onboarding_completed=True)
@@ -351,6 +400,17 @@ class MeTests(TestCase):
         )
         self.verify = self.verifier.start()
         self.addCleanup(self.verifier.stop)
+
+    def test_apple_session_cannot_access_protected_endpoints(self):
+        self.verify.return_value = {
+            "uid": self.user.firebase_uid,
+            "firebase": {"sign_in_provider": "apple.com"},
+        }
+        self.assertEqual(self.client.get("/api/v1/accounts/me/").status_code, 401)
+        response = self.client.patch("/api/v1/accounts/me/", {"name": "Changed"}, format="json")
+        self.assertEqual(response.status_code, 401)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.name, "Alex")
 
     def test_returns_own_profile_without_writes(self):
         User.objects.create_user(firebase_uid="other", name="Other")

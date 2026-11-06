@@ -620,3 +620,118 @@ A future worker must implement delivery/expiry state, safe claiming, retries,
 notification preferences, active-user checks, and device delivery. It must share
 the parent locking/cancellation rules to coordinate with task updates. Frontend
 integration remains pending. Apply the reminder migration on deployment.
+
+### Rewards summary
+
+`GET /api/v1/rewards/summary/?timezone=Asia/Kolkata`
+
+Requires a Firebase Bearer ID token. Returns the current user's `total_points`,
+`today_points`, seven `weekly_points` records (oldest first, including zero days),
+up to ten most recent ledger entries in `history`, `current_streak`, and
+`next_milestone`. Dates use the requested IANA timezone (UTC by default).
+Unknown or repeated filters and invalid timezones return HTTP 400. Responses
+use `Cache-Control: private, no-store`.
+
+The points ledger stores signed, nonzero transactions. A unique owner/source key
+prevents duplicate event awards. This endpoint is read-only: it does not award
+points or accept a user ID or balance from the client. No automatic earning rules
+are enabled yet, so new accounts correctly return zero points and empty history.
+Transactions dated after the requested local day are excluded.
+
+`current_streak.days` counts consecutive local journal-entry days, including today
+or ending yesterday; multiple entries on one day count once. This streak is
+independent of points transactions. Milestones are successive multiples of 300;
+`progress_percentage` is the nonnegative balance divided by the next target.
+For example, 250 points yields a 300-point target with 50 remaining; reaching
+300 advances the next target to 600. Negative ledger balances remain visible.
+
+Example empty-account response (history entries, when present, contain `id`,
+`points`, `description`, and `occurred_at`):
+
+```json
+{
+  "timezone": "Asia/Kolkata",
+  "date": "2026-11-06",
+  "total_points": 0,
+  "today_points": 0,
+  "weekly_points": [
+    {"date": "2026-10-31", "points": 0},
+    {"date": "2026-11-01", "points": 0},
+    {"date": "2026-11-02", "points": 0},
+    {"date": "2026-11-03", "points": 0},
+    {"date": "2026-11-04", "points": 0},
+    {"date": "2026-11-05", "points": 0},
+    {"date": "2026-11-06", "points": 0}
+  ],
+  "history": [],
+  "current_streak": {"days": 0, "activity": "journal"},
+  "next_milestone": {
+    "target_points": 300,
+    "remaining_points": 300,
+    "progress_percentage": 0.0
+  }
+}
+```
+
+### Journal audio transcription (self-hosted Whisper)
+
+`POST /api/v1/journal/transcriptions/` requires the same Firebase Bearer ID token
+as journal APIs. Send `multipart/form-data` with:
+
+- `audio`: one nonempty WAV, MP3, M4A, MP4, WebM, OGG or FLAC recording.
+- `language`: optional lowercase language code such as `en` or `hi`; omit for detection.
+
+Successful HTTP 200 response:
+
+```json
+{"text": "Today I felt calm.", "language": "en", "duration_seconds": 8.5}
+```
+
+This does not create or update a journal entry. Audio is decoded locally with
+PyAV and transcribed with faster-whisper; recordings are closed and deleted after
+processing, including failure paths. Silence may return an empty text string.
+No audio is sent to an external transcription API.
+
+Server setup:
+
+1. Install the optional runtime with `uv sync --extra transcription`.
+2. Provision a compatible faster-whisper model directory on the server, set
+   `WHISPER_MODEL` to its absolute path, then set `WHISPER_ENABLED=True`.
+3. Choose `WHISPER_DEVICE` and `WHISPER_COMPUTE_TYPE` for your hardware. Defaults
+   are CPU / int8 with two CPU threads. GPU deployment requires the runtime's
+   CUDA dependencies. Each Django worker loads its own model lazily.
+
+Models are loaded with `local_files_only=True`; requests never download a model.
+Until enabled and provisioned, the endpoint returns HTTP 503. The frontend is not
+connected to this endpoint yet.
+
+Limits default to 10 MiB per recording, five minutes of decoded audio, and five
+requests per authenticated user per minute. Unknown/repeated fields, bad files,
+unsupported languages, and oversized/overlong recordings return HTTP 400;
+missing authentication returns 401; throttling returns 429; a busy or unavailable
+engine returns 503. Responses are `private, no-store`. Each worker accepts one
+inference job at a time. Configure the reverse proxy's request-body cap and
+request timeout for these limits; this is a synchronous endpoint, not a queued
+transcription worker. DRF throttling uses the configured Django cache.
+
+Tests mock the inference runtime and model: `python manage.py test apps.journal.tests`.
+A live audio/model smoke test is still required after provisioning Whisper.
+
+### Create a task with connected subtasks
+
+`POST /api/v1/planner/tasks/` also accepts an optional `subtasks` list (maximum 50):
+
+```json
+{
+  "title": "Prepare presentation",
+  "date": "2026-11-06",
+  "time": "10:00",
+  "subtasks": [{"title": "Research"}, {"title": "Make slides"}]
+}
+```
+
+The server assigns every subtask to the newly created, authenticated user's task
+and preserves the submitted order. Parent and subtasks are saved in one database
+transaction. Validation or insertion failures leave neither a partial parent nor
+partial subtasks. The response includes the saved subtask IDs. Existing task
+updates continue to use the nested subtask endpoints.

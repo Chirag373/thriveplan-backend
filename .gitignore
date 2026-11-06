@@ -163,3 +163,6 @@ htmlcov/
 secrets/
 *service-account*.json
 *firebase-adminsdk*.json
+
+# macOS metadata
+.DS_Store

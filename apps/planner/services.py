@@ -23,7 +23,13 @@ def list_tasks(*, user, filters):
 
 @transaction.atomic
 def create_task(*, user, data):
-    return Task.objects.create(owner=user, **data)
+    fields = dict(data)
+    subtasks = fields.pop("subtasks", [])
+    task = Task.objects.create(owner=user, **fields)
+    Subtask.objects.bulk_create(
+        [Subtask(task=task, position=index, **item) for index, item in enumerate(subtasks)]
+    )
+    return task
 
 
 @transaction.atomic

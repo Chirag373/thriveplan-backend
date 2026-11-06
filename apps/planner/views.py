@@ -13,6 +13,7 @@ from .serializers import (
     ReminderSerializer,
     SubtaskSerializer,
     SubtaskWriteSerializer,
+    TaskCreateSerializer,
     TaskListQuerySerializer,
     TaskSerializer,
     TaskWriteSerializer,
@@ -56,7 +57,7 @@ class TaskListEndpoint(ListAPIView):
         return response
 
     def post(self, request):
-        serializer = TaskWriteSerializer(data=request.data)
+        serializer = TaskCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = create_task(user=request.user, data=serializer.validated_data)
         return Response(TaskSerializer(task).data, status=status.HTTP_201_CREATED)

@@ -44,8 +44,12 @@ def login_user(*, identity):
     if not user.is_active:
         raise PermissionDenied("This account has been deactivated.")
     post_user_auth_workflow(user=user)
+    # Contact details follow the verified Firebase identity, including linked providers.
+    user.email = identity.get("email", "")
+    user.email_verified = identity.get("email_verified", False)
+    user.phone_number = identity.get("phone_number", "")
     user.last_login = timezone.now()
-    user.save(update_fields=["last_login"])
+    user.save(update_fields=["email", "email_verified", "phone_number", "last_login", "updated_at"])
     return user
 
 

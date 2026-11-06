@@ -38,6 +38,8 @@ class FirebaseProvider:
             or identity.get("firebase", {}).get("sign_in_provider") == "anonymous"
         ):
             raise AuthenticationFailed("A non-anonymous Firebase account is required.")
+        if identity.get("firebase", {}).get("sign_in_provider") == "apple.com":
+            raise AuthenticationFailed("Apple sign-in is not supported.")
         return identity
 
 

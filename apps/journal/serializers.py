@@ -64,3 +64,35 @@ class JournalTemplateSerializer(serializers.ModelSerializer):
         model = JournalTemplate
         fields = ("id", "title", "description", "prompt", "icon", "colors")
         read_only_fields = fields
+
+
+class JournalTranscriptionSerializer(serializers.Serializer):
+    audio = serializers.FileField(allow_empty_file=False)
+    language = serializers.RegexField(r"^[a-z]{2,3}$", required=False)
+
+    def to_internal_value(self, data):
+        for field in data:
+            if field not in self.fields:
+                raise serializers.ValidationError({field: "Unsupported field."})
+            if hasattr(data, "getlist") and len(data.getlist(field)) != 1:
+                raise serializers.ValidationError({field: "Provide this field only once."})
+        return super().to_internal_value(data)
+
+    def validate_audio(self, value):
+        from pathlib import Path
+
+        from django.conf import settings
+
+        if value.size > settings.WHISPER_MAX_UPLOAD_BYTES:
+            raise serializers.ValidationError("The recording exceeds the upload size limit.")
+        if Path(value.name).suffix.lower() not in {
+            ".wav",
+            ".mp3",
+            ".m4a",
+            ".mp4",
+            ".webm",
+            ".ogg",
+            ".flac",
+        }:
+            raise serializers.ValidationError("Use WAV, MP3, M4A, MP4, WebM, OGG or FLAC audio.")
+        return value

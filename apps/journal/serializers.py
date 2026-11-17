@@ -7,9 +7,11 @@ from .models import JournalEntry, JournalTemplate
 
 
 class JournalEntrySerializer(serializers.ModelSerializer):
+    points_awarded = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
         model = JournalEntry
-        fields = ("id", "mood", "thoughts", "date")
+        fields = ("id", "mood", "thoughts", "date", "points_awarded")
         read_only_fields = fields
 
 

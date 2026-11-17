@@ -1,6 +1,8 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 
+from apps.rewards.services import award_journal_entry
+
 from .models import JournalEntry, JournalTemplate
 
 
@@ -13,7 +15,9 @@ def list_entries(*, user, filters):
 
 @transaction.atomic
 def create_entry(*, user, data):
-    return JournalEntry.objects.create(owner=user, **data)
+    entry = JournalEntry.objects.create(owner=user, **data)
+    entry.points_awarded = award_journal_entry(user=user)
+    return entry
 
 
 @transaction.atomic

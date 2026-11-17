@@ -27,6 +27,7 @@ class Task(models.Model):
         choices=[("Morning", "Morning"), ("Afternoon", "Afternoon"), ("Evening", "Evening")],
     )
     dashboard = models.BooleanField(default=True)
+    first_completed_at = models.DateTimeField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

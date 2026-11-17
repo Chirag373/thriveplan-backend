@@ -33,6 +33,7 @@ class SubtaskSerializer(serializers.ModelSerializer):
 
 
 class TaskSerializer(serializers.ModelSerializer):
+    points_awarded = serializers.IntegerField(read_only=True, default=0)
     completed = serializers.BooleanField(read_only=True)
     time = serializers.SerializerMethodField()
     subtasks = SubtaskSerializer(many=True, read_only=True)
@@ -56,6 +57,7 @@ class TaskSerializer(serializers.ModelSerializer):
             "completed",
             "period",
             "dashboard",
+            "points_awarded",
         )
         read_only_fields = fields
 

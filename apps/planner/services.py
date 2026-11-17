@@ -4,6 +4,9 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
+from apps.accounts.models import User
+from apps.rewards.services import award_task_completion
+
 from .models import Reminder, Subtask, Task
 
 
@@ -25,6 +28,9 @@ def list_tasks(*, user, filters):
 def create_task(*, user, data):
     fields = dict(data)
     subtasks = fields.pop("subtasks", [])
+    # Creating an already-completed task is not a completion reward event.
+    if fields.get("status") == Task.Status.COMPLETED:
+        fields["first_completed_at"] = timezone.now()
     task = Task.objects.create(owner=user, **fields)
     Subtask.objects.bulk_create(
         [Subtask(task=task, position=index, **item) for index, item in enumerate(subtasks)]
@@ -34,9 +40,19 @@ def create_task(*, user, data):
 
 @transaction.atomic
 def update_task(*, user, task_id, data):
+    User.objects.select_for_update().get(pk=user.pk)
     task = get_object_or_404(Task.objects.select_for_update(), pk=task_id, owner=user)
+    was_completed = task.completed
     for field, value in data.items():
         setattr(task, field, value)
+    if task.completed and not was_completed and task.first_completed_at is None:
+        task.first_completed_at = timezone.now()
+        data = {**data, "first_completed_at": task.first_completed_at}
+        task.points_awarded = award_task_completion(
+            user=user,
+            task=task,
+            completed_at=task.first_completed_at,
+        )
     if task.completed or data.get("reminder") is False:
         task.reminders.all().delete()
         task.reminder = False

@@ -68,3 +68,6 @@ WHISPER_COMPUTE_TYPE = env("WHISPER_COMPUTE_TYPE", default="int8")
 WHISPER_CPU_THREADS = env.int("WHISPER_CPU_THREADS", default=2)
 WHISPER_MAX_UPLOAD_BYTES = env.int("WHISPER_MAX_UPLOAD_BYTES", default=10 * 1024 * 1024)
 WHISPER_MAX_SECONDS = env.int("WHISPER_MAX_SECONDS", default=300)
+
+# A fixed server timezone prevents clients moving between days to bypass reward caps.
+REWARDS_TIME_ZONE = env("REWARDS_TIME_ZONE", default="UTC")

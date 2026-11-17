@@ -30,7 +30,7 @@ class JournalTests(TestCase):
     def test_create_defaults_and_response(self):
         response = self.client.post(self.url, {"thoughts": " A calm day "}, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(set(response.data), {"id", "thoughts", "mood", "date"})
+        self.assertEqual(set(response.data), {"id", "thoughts", "mood", "date", "points_awarded"})
         self.assertEqual(response.data["thoughts"], "A calm day")
         self.assertIsNone(response.data["mood"])
         self.assertTrue(response.data["date"].endswith("Z"))
